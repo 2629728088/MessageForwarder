@@ -1,0 +1,14 @@
+# plugins/MessageForwarder/config.toml
+[rules.news]
+name = "线报转发规则"
+source_groups = ["23977575782@chatroom", "44024627737@chatroom"]  # 监控的源群组
+target_groups = ["58016596749@chatroom", "目标群ID2@chatroom"]  # 要转发的目标群
+keywords = ["线报", "羊毛", "漏洞"]  # 触发转发的关键词
+exclude_users = ["广告哥"]  # 排除的用户昵称
+add_prefix = "【群消息转发】\n"  # 转发时添加的前缀
+
+[rules.important]
+name = "重要通知转发"
+source_groups = ["58016596749@chatroom"]
+target_groups = ["全员群ID@chatroom"]
+keywords = ["@all", "重要通知"]
