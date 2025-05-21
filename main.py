@@ -2,6 +2,8 @@ import time
 import hashlib
 import json
 import logging
+import os
+import tomllib  # Python 3.11+
 from typing import Dict, List, Optional, Set, Any, Union
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
@@ -9,6 +11,14 @@ from common.log import logger
 from plugins import PluginBase, Event, EventContext, EventAction
 from channel.bot import BOT
 import asyncio
+
+# 对于Python 3.10及以下版本，尝试导入第三方的tomli库
+try:
+    if not hasattr(tomllib, 'load'):
+        import tomli as tomllib
+except ImportError:
+    # 如果tomli也不可用，则继续使用JSON格式
+    pass
 
 class MacMessageForwarder(PluginBase):
     """
@@ -43,9 +53,25 @@ class MacMessageForwarder(PluginBase):
         # 创建事件循环，用于异步任务
         self.loop = asyncio.new_event_loop()
         
+        # 从配置文件加载设置
+        config = self.get_config()
         # 错误重试配置
-        self.max_retries = 3
-        self.retry_delay = 1  # 秒
+        self.max_retries = config.get('max_retries', 3)
+        self.retry_delay = config.get('retry_delay', 1)  # 秒
+        # 消息转发超时设置
+        self.timeout = config.get('timeout', 30)  # 秒
+        # 是否使用XML方式转发
+        self.use_xml_forward = config.get('use_xml_forward', True)
+        # 消息去重设置
+        self.enable_deduplication = config.get('enable_deduplication', True)
+        self.cache_expiry = config.get('cache_expiry', 300)  # 缓存过期时间，默认5分钟
+        # 调试模式
+        self.debug_mode = config.get('debug_mode', False)
+        
+        if self.debug_mode:
+            logger.info(f"[MacMessageForwarder] 当前配置: {config}")
+        else:
+            logger.info("[MacMessageForwarder] 插件配置已加载")
         
         # 保存所有待处理的原始消息，key为msg_id
         self.raw_messages = {}
@@ -547,31 +573,73 @@ class MacMessageForwarder(PluginBase):
 
     def _is_duplicate(self, msg_hash: str) -> bool:
         """检查消息是否重复"""
+        # 如果禁用了去重功能，始终返回False
+        if not self.enable_deduplication:
+            return False
+            
         now = time.time()
         if msg_hash in self.dedup_cache:
-            # 如果消息在1分钟内重复，返回True
-            if now - self.dedup_cache[msg_hash] < 60:
+            # 如果消息在缓存期内重复，返回True
+            if now - self.dedup_cache[msg_hash] < 60:  # 短时间内重复消息固定为1分钟
                 return True
         self.dedup_cache[msg_hash] = now
         
-        # 清理过期的缓存项(超过10分钟的)
-        expired_keys = [k for k, v in self.dedup_cache.items() if now - v > 600]
+        # 清理过期的缓存项
+        expired_keys = [k for k, v in self.dedup_cache.items() if now - v > self.cache_expiry]
         for k in expired_keys:
             del self.dedup_cache[k]
             
         return False
 
     def get_config(self) -> dict:
-        """获取插件配置"""
-        config = super().get_config()
-        if not config:
-            # 默认配置
-            config = {
-                "source_group": "",  # 要监听的群ID，必须填写
-                "target_group": "",  # 消息要转发到的目标群ID，必须填写
-                "monitor_users": [],  # 要监听的用户ID列表，为空则监听所有用户
-                "show_sender_info": True,  # 是否在转发的消息中显示原发送者信息
-                "max_retries": 3,  # 转发失败时的最大重试次数
-                "retry_delay": 1,  # 重试间隔(秒)
-            }
+        """获取插件配置，支持TOML和JSON两种格式"""
+        try:
+            # 首先尝试读取TOML格式配置
+            config_path = os.path.join(os.path.dirname(__file__), "config.toml")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "rb") as f:
+                        config = tomllib.load(f)
+                    logger.info("[MacMessageForwarder] 已读取TOML配置文件")
+                    
+                    # 处理TOML配置中的特殊数据结构
+                    if isinstance(config.get('monitor_users', []), list):
+                        # 确保monitor_users是列表类型
+                        pass
+                    else:
+                        # 如果不是列表，转换为列表
+                        config['monitor_users'] = []
+                        
+                    return config
+                except Exception as e:
+                    logger.error(f"[MacMessageForwarder] 读取TOML配置文件失败: {e}")
+            
+            # 如果TOML配置不存在或读取失败，尝试读取JSON格式配置
+            config_path = os.path.join(os.path.dirname(__file__), "config.json")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        config = json.load(f)
+                    logger.info("[MacMessageForwarder] 已读取JSON配置文件")
+                    return config
+                except Exception as e:
+                    logger.error(f"[MacMessageForwarder] 读取JSON配置文件失败: {e}")
+        except Exception as e:
+            logger.error(f"[MacMessageForwarder] 读取配置文件失败: {e}")
+        
+        # 默认配置
+        config = {
+            "source_group": "",  # 要监听的群ID，必须填写
+            "target_group": "",  # 消息要转发到的目标群ID，必须填写
+            "monitor_users": [],  # 要监听的用户ID列表，为空则监听所有用户
+            "show_sender_info": True,  # 是否在转发的消息中显示原发送者信息
+            "max_retries": 3,  # 转发失败时的最大重试次数
+            "retry_delay": 1,  # 重试间隔(秒)
+            "timeout": 30,  # 消息转发超时时间(秒)
+            "use_xml_forward": True,  # 是否使用XML转发方式
+            "enable_deduplication": True,  # 是否启用去重功能
+            "cache_expiry": 300,  # 缓存过期时间(秒)
+            "debug_mode": False,  # 调试模式
+        }
+        
         return config 
