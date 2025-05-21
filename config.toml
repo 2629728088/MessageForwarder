@@ -1,14 +1,41 @@
-# plugins/MessageForwarder/config.toml
-[rules.news]
-name = "线报转发规则"
-source_groups = ["23977575782@chatroom", "44024627737@chatroom"]  # 监控的源群组
-target_groups = ["58016596749@chatroom", "目标群ID2@chatroom"]  # 要转发的目标群
-keywords = ["线报", "羊毛", "漏洞"]  # 触发转发的关键词
-exclude_users = ["广告哥"]  # 排除的用户昵称
-add_prefix = "【群消息转发】\n"  # 转发时添加的前缀
+# MacMessageForwarder 插件配置文件
 
-[rules.important]
-name = "重要通知转发"
-source_groups = ["58016596749@chatroom"]
-target_groups = ["全员群ID@chatroom"]
-keywords = ["@all", "重要通知"]
+# 要监听的群ID，必须替换为实际的群ID
+# 格式应该是类似于 "12345678@chatroom" 的字符串
+source_group = "12345678@chatroom"
+
+# 消息要转发到的目标群ID，必须替换为实际的群ID
+# 格式应该是类似于 "87654321@chatroom" 的字符串
+target_group = "87654321@chatroom"
+
+# 要监听的用户ID列表，为空则监听所有用户
+# 如果要监听特定用户，请添加用户ID，例如 ["wxid_abc123", "wxid_def456"]
+monitor_users = []
+
+# 是否在转发的消息中显示原发送者信息
+# true: 显示原始发送者信息 
+# false: 不显示发送者信息
+show_sender_info = true
+
+# 转发失败时的最大重试次数
+max_retries = 3
+
+# 重试间隔(秒)
+retry_delay = 1
+
+# 消息转发超时时间(秒)
+timeout = 30
+
+# 是否使用XML转发方式(针对Mac协议优化)
+# 对于图片、视频等媒体消息，使用XML方式可以提高成功率
+use_xml_forward = true
+
+# 是否启用高级去重功能(防止重复转发)
+enable_deduplication = true
+
+# 消息缓存过期时间(秒)，用于去重
+# 在此时间内的重复消息将不会被转发
+cache_expiry = 300
+
+# 调试模式，开启后会记录更详细的日志
+debug_mode = false 
